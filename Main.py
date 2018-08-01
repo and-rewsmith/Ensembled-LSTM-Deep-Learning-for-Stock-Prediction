@@ -11,11 +11,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.dates import DateFormatter, WeekdayLocator, DayLocator, MONDAY, date2num
 from mpl_finance import candlestick_ohlc
-import os.path
 from keras.models import Sequential
 from keras.layers import Dense, Activation, Dropout
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from extra_variables import addVariables
 
 #Turning off Pandas iloc warning
 pd.options.mode.chained_assignment = None  # default='warn'
@@ -103,6 +103,7 @@ def get_data(ticker):
         df[column] = pd.to_numeric(df[column])
     next_day_change=[]
     
+    
     for i in range(len(df)):
         if i == 0:
             pass
@@ -128,7 +129,7 @@ def dataVariables(df, ticker):
     Close_1d_change = []
     Volume_1d_change = []
     
-    for i in range(len(df)-8):
+    for i in range(len(df)-30):
         day = df.iloc[i,:]    
         next_day = df.iloc[i+1,:]
         
@@ -151,7 +152,7 @@ def dataVariables(df, ticker):
     Close_5d_change = []
     Volume_5d_change = []
     
-    for i in range(len(df)-8):
+    for i in range(len(df)-30):
         day = df.iloc[i,:]    
         next_day = df.iloc[i+5,:]
         
@@ -169,7 +170,8 @@ def dataVariables(df, ticker):
                 Volume_5d_change.append(data)
 
     
-    df = df.iloc[0:-8:]    
+    df = df.iloc[0:-30,:]  
+    
     df['Open_1d_change'] = Open_1d_change
     df['High_1d_change'] = High_1d_change
     df['Low_1d_change'] = Low_1d_change
@@ -189,6 +191,10 @@ def dataVariables(df, ticker):
 
 def moving_average(group):
     sma = group.rolling(9).mean()
+    return sma
+
+def thirty_moving_average(group):
+    sma = group.rolling(30).mean()
     return sma
 
 
@@ -264,6 +270,9 @@ if __name__ == '__main__':
     
     df = get_data(ticker)  
     
+    df = addVariables(df, ticker)
+    
+    
     ma = moving_average(df.iloc[::-1]['Close'])
     Close_ma = ma.iloc[::-1]
     
@@ -280,6 +289,25 @@ if __name__ == '__main__':
     Volume_ma = ma.iloc[::-1]
     
     
+    
+    thirty_ma = thirty_moving_average(df.iloc[::-1]['Close'])
+    Close_thirty_ma = thirty_ma.iloc[::-1]
+    
+    thirty_ma = thirty_moving_average(df.iloc[::-1]['Open'])
+    Open_thirty_ma = thirty_ma.iloc[::-1]
+    
+    thirty_ma = thirty_moving_average(df.iloc[::-1]['High'])
+    High_thirty_ma = thirty_ma.iloc[::-1]
+    
+    thirty_ma = thirty_moving_average(df.iloc[::-1]['Low'])
+    Low_thirty_ma = thirty_ma.iloc[::-1]
+    
+    thirty_ma = thirty_moving_average(df.iloc[::-1]['Volume'])
+    Volume_thirty_ma = thirty_ma.iloc[::-1]
+    
+
+    
+    
     df = dataVariables(df, ticker)    
     df = df.drop('Open', axis=1)
     df = df.drop('High', axis=1)
@@ -287,11 +315,21 @@ if __name__ == '__main__':
     df = df.drop('Close', axis=1)
     df = df.drop('Volume', axis=1)
     
-    df['Close_ma'] = Close_ma[0:-8]
-    df['Open_ma'] = Open_ma[0:-8]
-    df['High_ma'] = High_ma[0:-8]
-    df['Low_ma'] = Low_ma[0:-8]
-    df['Volume_ma'] = Volume_ma[0:-8]
+    
+    df['Close_ma'] = Close_ma[0:-30]
+    df['Open_ma'] = Open_ma[0:-30]
+    df['High_ma'] = High_ma[0:-30]
+    df['Low_ma'] = Low_ma[0:-30]
+    df['Volume_ma'] = Volume_ma[0:-30]
+    
+    
+    df['Close_ma'] = Close_ma[0:-30]
+    df['Open_ma'] = Open_ma[0:-30]
+    df['High_ma'] = High_ma[0:-30]
+    df['Low_ma'] = Low_ma[0:-30]
+    df['Volume_ma'] = Volume_ma[0:-30]
+    
+    df.to_csv('data.csv')
     
     model = model(df)
     history = model_train(df, model)
