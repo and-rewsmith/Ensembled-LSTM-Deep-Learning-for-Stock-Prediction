@@ -8,107 +8,67 @@ This is a temporary script file.
 from alpha_vantage.timeseries import TimeSeries
 import pandas as pd
 import matplotlib.pyplot as plt
-import numpy as np
-from matplotlib.dates import DateFormatter, WeekdayLocator, DayLocator, MONDAY, date2num
-from mpl_finance import candlestick_ohlc
 from keras.models import Sequential
-from keras.layers import Dense, Activation, Dropout
+from keras.layers import Dense, Dropout
+from keras.optimizers import RMSprop
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from extra_variables import addVariables
+from extra_variables import addVariables, add_RSI
+from backtest import backtest
+from lstm import flatten_dataset, lstm_train
+import subprocess
+import webbrowser
+import time
+import os
+
+folder = './Graph'
+for the_file in os.listdir(folder):
+    file_path = os.path.join(folder, the_file)
+    try:
+        if os.path.isfile(file_path):
+            os.unlink(file_path)
+    except Exception as e:
+        print(e)
+
+proc = subprocess.Popen('tensorboard --logdir=./Graph', shell=True)
+time.sleep(5)
+#Allow process to run...
+webbrowser.open('http://DESKTOP-GCNBT83:6006', new=2)
+
+
+
+
+
 
 #Turning off Pandas iloc warning
 pd.options.mode.chained_assignment = None  # default='warn'
 
-def pandas_candlestick_ohlc(dat, stick = "day", otherseries = None):
-    
-    mondays = WeekdayLocator(MONDAY)        
-    alldays = DayLocator()              
-    transdat = dat.loc[:,["Open", "High", "Low", "Close"]]
-    if (type(stick) == str):
-        if stick == "day":
-            plotdat = transdat
-            stick = 1 # Used for plotting
-        elif stick in ["week", "month", "year"]:
-            if stick == "week":
-                transdat["week"] = pd.to_datetime(transdat.index).map(lambda x: x.isocalendar()[1]) # Identify weeks
-            elif stick == "month":
-                transdat["month"] = pd.to_datetime(transdat.index).map(lambda x: x.month) # Identify months
-            transdat["year"] = pd.to_datetime(transdat.index).map(lambda x: x.isocalendar()[0]) # Identify years
-            grouped = transdat.groupby(list(set(["year",stick]))) # Group by year and other appropriate variable
-            plotdat = pd.DataFrame({"Open": [], "High": [], "Low": [], "Close": []}) # Create empty data frame containing what will be plotted
-            for name, group in grouped:
-                plotdat = plotdat.append(pd.DataFrame({"Open": group.iloc[0,0],
-                                            "High": max(group.High),
-                                            "Low": min(group.Low),
-                                            "Close": group.iloc[-1,3]},
-                                           index = [group.index[0]]))
-            if stick == "week": stick = 5
-            elif stick == "month": stick = 30
-            elif stick == "year": stick = 365
-    elif (type(stick) == int and stick >= 1):
-        transdat["stick"] = [np.floor(i / stick) for i in range(len(transdat.index))]
-        grouped = transdat.groupby("stick")
-        plotdat = pd.DataFrame({"Open": [], "High": [], "Low": [], "Close": []}) # Create empty data frame containing what will be plotted
-        for name, group in grouped:
-            plotdat = plotdat.append(pd.DataFrame({"Open": group.iloc[0,0],
-                                        "High": max(group.High),
-                                        "Low": min(group.Low),
-                                        "Close": group.iloc[-1,3]},
-                                       index = [group.index[0]]))
-    else:
-        raise ValueError('Valid inputs to argument "stick" include the strings "day", "week", "month", "year", or a positive integer')
-    # Set plot parameters, including the axis object ax used for plotting
-    fig, ax = plt.subplots(figsize=(20,20))
-    fig.subplots_adjust(bottom=0.2)
-    if plotdat.index[-1] - plotdat.index[0] < pd.Timedelta('730 days'):
-        weekFormatter = DateFormatter('%b %d')  # e.g., Jan 12
-        ax.xaxis.set_major_locator(mondays)
-        ax.xaxis.set_minor_locator(alldays)
-    else:
-        weekFormatter = DateFormatter('%b %d, %Y')
-    ax.xaxis.set_major_formatter(weekFormatter)
-    ax.grid(True)
-    # Create the candelstick chart
-    candlestick_ohlc(ax, list(zip(list(date2num(plotdat.index.tolist())), plotdat["Open"].tolist(), plotdat["High"].tolist(),
-                      plotdat["Low"].tolist(), plotdat["Close"].tolist())),
-                      colorup = "black", colordown = "red", width = stick * .4)
-    # Plot other series (such as moving averages) as lines
-    if otherseries != None:
-        if type(otherseries) != list:
-            otherseries = [otherseries]
-        dat.loc[:,otherseries].plot(ax = ax, lw = 1.3, grid = True)
- 
-    ax.xaxis_date()
-    ax.autoscale_view()
-    plt.setp(plt.gca().get_xticklabels(), rotation=45, horizontalalignment='right')
-    plt.show()
-
 
 def get_data(ticker):
-    
+
     key_list = []
     with open('keys.txt') as keys:
         lines = keys.readlines()
         for line in lines:
-            key_list.append(line)      
+            key_list.append(line)
     av_key = key_list[0]
     ts = TimeSeries(av_key, retries=100)
-    data, metadata = ts.get_daily(ticker, outputsize='full')
+    data, metadata = ts.get_daily_adjusted(ticker, outputsize='full')
     data = pd.DataFrame.from_dict(data)
+    print(data)
     df = data.T
-    df.columns = ['Open','High','Low','Close','Volume']
+    df.columns = ['Open','High','Low','Drop','Close', 'Volume', 'Drop1', 'Drop2']
+    df = df.drop(['Drop', 'Drop1', 'Drop2'], axis = 1)
     df.index = pd.to_datetime(df.index)
     for column in df.columns :
         df[column] = pd.to_numeric(df[column])
     next_day_change=[]
-    
-    
+
     for i in range(len(df)):
         if i == 0:
             pass
         else:
-            day = df.iloc[i,:]    
+            day = df.iloc[i,:]
             next_day = df.iloc[i-1,:]
             next_change = next_day['Close'] - day['Close']
             if next_change >= 0:
@@ -117,22 +77,23 @@ def get_data(ticker):
                 next_day_change.append(0)
     df = df.iloc[1:,:]
     df['Next_Change'] = next_day_change
+
     return df
 
 def dataVariables(df, ticker):
-    
+
     columns = list(df.columns)[0:-1]
-    
+
     Open_1d_change = []
     High_1d_change = []
     Low_1d_change = []
     Close_1d_change = []
     Volume_1d_change = []
-    
+
     for i in range(len(df)-30):
-        day = df.iloc[i,:]    
+        day = df.iloc[i,:]
         next_day = df.iloc[i+1,:]
-        
+
         for col in columns:
             data = (next_day[col] - day[col])/day[col]
             if col == 'Open':
@@ -145,17 +106,17 @@ def dataVariables(df, ticker):
                 Close_1d_change.append(data)
             if col == 'Volume':
                 Volume_1d_change.append(data)
-    
+
     Open_5d_change = []
     High_5d_change = []
     Low_5d_change = []
     Close_5d_change = []
     Volume_5d_change = []
-    
+
     for i in range(len(df)-30):
-        day = df.iloc[i,:]    
+        day = df.iloc[i,:]
         next_day = df.iloc[i+5,:]
-        
+
         for col in columns:
             data = (next_day[col] - day[col])/day[col]
             if col == 'Open':
@@ -169,24 +130,22 @@ def dataVariables(df, ticker):
             if col == 'Volume':
                 Volume_5d_change.append(data)
 
-    
-    df = df.iloc[0:-30,:]  
-    
+
+    df = df.iloc[0:-30,:]
+
     df['Open_1d_change'] = Open_1d_change
     df['High_1d_change'] = High_1d_change
     df['Low_1d_change'] = Low_1d_change
     df['Close_1d_change'] = Close_1d_change
     df['Volume_1d_change'] = Volume_1d_change
-    
+
     df['Open_5d_change'] = Open_5d_change
     df['High_5d_change'] = High_5d_change
     df['Low_5d_change'] = Low_5d_change
     df['Close_5d_change'] = Close_5d_change
     df['Volume_5d_change'] = Volume_5d_change
-    
-    
-    df.to_csv(ticker + '_data.csv')
-    
+
+
     return df
 
 def moving_average(group):
@@ -197,48 +156,133 @@ def thirty_moving_average(group):
     sma = group.rolling(30).mean()
     return sma
 
-
-def model(df):
+def prepare_data(ticker):
     
+    df = get_data(ticker)
+    df = addVariables(df, ticker)
+    df = add_RSI(df)
+
+    ma = moving_average(df.iloc[::-1]['Close'])
+    Close_ma = ma.iloc[::-1]
+    ma = moving_average(df.iloc[::-1]['Open'])
+    Open_ma = ma.iloc[::-1]
+    ma = moving_average(df.iloc[::-1]['High'])
+    High_ma = ma.iloc[::-1]
+    ma = moving_average(df.iloc[::-1]['Low'])
+    Low_ma = ma.iloc[::-1]
+    ma = moving_average(df.iloc[::-1]['Volume'])
+    Volume_ma = ma.iloc[::-1]
+
+    thirty_ma = thirty_moving_average(df.iloc[::-1]['Close'])
+    Close_thirty_ma = thirty_ma.iloc[::-1]
+    thirty_ma = thirty_moving_average(df.iloc[::-1]['Open'])
+    Open_thirty_ma = thirty_ma.iloc[::-1]
+    thirty_ma = thirty_moving_average(df.iloc[::-1]['High'])
+    High_thirty_ma = thirty_ma.iloc[::-1]
+    thirty_ma = thirty_moving_average(df.iloc[::-1]['Low'])
+    Low_thirty_ma = thirty_ma.iloc[::-1]
+    thirty_ma = thirty_moving_average(df.iloc[::-1]['Volume'])
+    Volume_thirty_ma = thirty_ma.iloc[::-1]
+    
+    ma = moving_average(df.iloc[::-1]['convergence'])
+    convergence_ma = ma.iloc[::-1]
+    ma = moving_average(df.iloc[::-1]['RSI'])
+    RSI_ma = ma.iloc[::-1]
+    ma = moving_average(df.iloc[::-1]['MACD_change'])
+    MACD_change_ma = ma.iloc[::-1]
+    ma = moving_average(df.iloc[::-1]['signal_line'])
+    signal_line_ma = ma.iloc[::-1]
+
+    
+
+
+    df = dataVariables(df, ticker)
+    Close_list = df['Close']
+
+    df = df.drop('Open', axis=1)
+    df = df.drop('High', axis=1)
+    df = df.drop('Low', axis=1)
+    df = df.drop('Close', axis=1)
+    df = df.drop('Volume', axis=1)
+    
+    df['Close_ma'] = Close_ma[0:-30]
+    df['Open_ma'] = Open_ma[0:-30]
+    df['High_ma'] = High_ma[0:-30]
+    df['Low_ma'] = Low_ma[0:-30]
+    df['Volume_ma'] = Volume_ma[0:-30]
+    
+    df['Close_thirty_ma'] = Close_thirty_ma[0:-30]
+    df['Open_thirty_ma'] = Open_thirty_ma[0:-30]
+    df['High_thirty_ma'] = High_thirty_ma[0:-30]
+    df['Low_thirty_ma'] = Low_thirty_ma[0:-30]
+    df['Volume_thirty_ma'] = Volume_thirty_ma[0:-30]
+    
+    df['convergence_ma'] = convergence_ma[0:-30]
+    df['RSI_ma'] = RSI_ma[0:-30]
+    df['MACD_change_ma'] = MACD_change_ma[0:-30]
+    df['signal_line_ma'] = signal_line_ma[0:-30]
+    
+    df.to_csv('data.csv')
+    
+    return df, Close_list
+
+def create_model(optimizer='sgd', learn_rate=.001, init_mode='uniform',
+                 activation1='relu', activation2='relu', activation3='tanh', activation4='sigmoid'):
+
     model = Sequential()
-    num_inputs = len(list(df.columns)[0:-1])
-    model.add(Dense(250, input_dim=num_inputs))
-    model.add(Activation('relu'))
-    model.add(Dense(250))
+    model.add(Dense(100, input_dim=32, activation=activation1, kernel_initializer=init_mode))
     model.add(Dropout(0.05))
-    model.add(Activation('relu'))
-    model.add(Dense(250))
+    model.add(Dense(150, activation=activation2, kernel_initializer=init_mode))
     model.add(Dropout(0.05))
-    model.add(Activation('relu'))
-    model.add(Dense(250))
-    model.add(Activation('sigmoid'))
-    model.add(Dense(100))
-    model.add(Dropout(0.15))
-    model.add(Activation('tanh'))
-    model.add(Dense(20))
+    model.add(Dense(50, activation=activation3, kernel_initializer=init_mode))
+    model.add(Dropout(0.05))
+    model.add(Dense(10, activation=activation4, kernel_initializer=init_mode))
     model.add(Dropout(0.025))
-    model.add(Activation('sigmoid'))
     model.add(Dense(1))
     
-    model.compile(loss='binary_crossentropy', optimizer='adadelta', metrics=['accuracy'])
-    return model 
+    optimizer = RMSprop(lr=learn_rate)
+    model.compile(loss='mean_squared_error', optimizer=optimizer, metrics=['accuracy'])
+
+    return model
+
+
+    
+def preprocess(df):
+
+    df_zeros = df[df['Next_Change'] == 0]
+    df_ones = df[df['Next_Change'] == 1]
+    min_length = min([len(df_zeros), len(df_ones)])
+    df_zeros = df_zeros.iloc[0:min_length, :]
+    df_ones = df_ones.iloc[0:min_length, :]
+    df = pd.concat([df_zeros,df_ones])
+    Y = df['Next_Change']
+    X1 = df.drop('Next_Change', axis=1)
+    X = X1
+    scaler = StandardScaler()
+
+    X = scaler.fit_transform(X)
+    X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.4)
+
+    return X_train, X_test, y_train, y_test, X, Y
 
 def model_train(df, model):
+
+    X_train, X_test, y_train, y_test, X, Y = preprocess(df)
     
-    y = df['Next_Change']
-    X = df.drop('Next_Change', axis=1)
-    
-    scaler = StandardScaler()
-    X = scaler.fit_transform(X)
-    
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25)
-    
-    
-    history = model.fit(X_train, y_train, epochs=100, verbose=1, validation_data=(X_test,y_test))
-    return history
+    history = model.fit(X_train, y_train, epochs=5, verbose=1, validation_data=(X_test,y_test))
+    predictions = model.predict(X)
+
+    plt.figure()
+    plt.hist(predictions, bins = 100, normed = True, alpha = 0.5)
+    plt.show
+
+    return history, model, df
+
+
 
 def plot_model(history):
-    
+
+    plt.figure()
     #  "Accuracy"
     plt.plot(history.history['acc'])
     plt.plot(history.history['val_acc'])
@@ -255,89 +299,19 @@ def plot_model(history):
     plt.xlabel('epoch')
     plt.legend(['train', 'validation'], loc='upper left')
     plt.show()
-    
-    
+
+
 if __name__ == '__main__':
+
+    ticker = 'UVXY'
+    df, Close_list = prepare_data(ticker)
     
-    ticker = 'SPY'
-    
-#    if os.path.isfile(ticker):
-#        df = pd.read_csv(ticker + '_data.csv')
-#    else:
-#        df = get_data(ticker)  
-#        df = dataVariables(df, ticker)
-    
-    
-    df = get_data(ticker)  
-    
-    df = addVariables(df, ticker)
-    
-    
-    ma = moving_average(df.iloc[::-1]['Close'])
-    Close_ma = ma.iloc[::-1]
-    
-    ma = moving_average(df.iloc[::-1]['Open'])
-    Open_ma = ma.iloc[::-1]
-    
-    ma = moving_average(df.iloc[::-1]['High'])
-    High_ma = ma.iloc[::-1]
-    
-    ma = moving_average(df.iloc[::-1]['Low'])
-    Low_ma = ma.iloc[::-1]
-    
-    ma = moving_average(df.iloc[::-1]['Volume'])
-    Volume_ma = ma.iloc[::-1]
-    
-    
-    
-    thirty_ma = thirty_moving_average(df.iloc[::-1]['Close'])
-    Close_thirty_ma = thirty_ma.iloc[::-1]
-    
-    thirty_ma = thirty_moving_average(df.iloc[::-1]['Open'])
-    Open_thirty_ma = thirty_ma.iloc[::-1]
-    
-    thirty_ma = thirty_moving_average(df.iloc[::-1]['High'])
-    High_thirty_ma = thirty_ma.iloc[::-1]
-    
-    thirty_ma = thirty_moving_average(df.iloc[::-1]['Low'])
-    Low_thirty_ma = thirty_ma.iloc[::-1]
-    
-    thirty_ma = thirty_moving_average(df.iloc[::-1]['Volume'])
-    Volume_thirty_ma = thirty_ma.iloc[::-1]
+    X_full2d, X_full3d, Y, X_train2d, X_test2d, X_train3d, X_test3d, y_train, y_test  = flatten_dataset(df, test_size=.05)
+    history = lstm_train(X_full2d, X_full3d, Y, X_train2d, X_test2d, X_train3d, X_test3d, y_train, y_test, 100)
     
 
-    
-    
-    df = dataVariables(df, ticker)    
-    df = df.drop('Open', axis=1)
-    df = df.drop('High', axis=1)
-    df = df.drop('Low', axis=1)
-    df = df.drop('Close', axis=1)
-    df = df.drop('Volume', axis=1)
-    
-    
-    df['Close_ma'] = Close_ma[0:-30]
-    df['Open_ma'] = Open_ma[0:-30]
-    df['High_ma'] = High_ma[0:-30]
-    df['Low_ma'] = Low_ma[0:-30]
-    df['Volume_ma'] = Volume_ma[0:-30]
-    
-    
-    df['Close_ma'] = Close_ma[0:-30]
-    df['Open_ma'] = Open_ma[0:-30]
-    df['High_ma'] = High_ma[0:-30]
-    df['Low_ma'] = Low_ma[0:-30]
-    df['Volume_ma'] = Volume_ma[0:-30]
-    
-    df.to_csv('data.csv')
-    
-    model = model(df)
-    history = model_train(df, model)
-    
-    plot_model(history)
-    
-    
-    
-    
-    
-    
+
+
+
+
+
