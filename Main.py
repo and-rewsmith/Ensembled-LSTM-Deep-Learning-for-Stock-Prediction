@@ -303,14 +303,16 @@ def plot_model(history):
 
 if __name__ == '__main__':
 
-    ticker = 'UVXY'
+    ticker = 'PYBI'
+    cv_split = 0.05
+    
     df, Close_list = prepare_data(ticker)
     
-    X_full2d, X_full3d, Y, X_train2d, X_test2d, X_train3d, X_test3d, y_train, y_test  = flatten_dataset(df, test_size=.05)
-    history = lstm_train(X_full2d, X_full3d, Y, X_train2d, X_test2d, X_train3d, X_test3d, y_train, y_test, 100)
+    X_full2d, X_full3d, Y, X_train2d, X_test2d, X_train3d, X_test3d, y_train, y_test, split_value  = flatten_dataset(df, test_size=cv_split)
     
-
-
+    model, history, predictions, targets = lstm_train(X_full2d, X_full3d, Y, X_train2d, X_test2d, X_train3d, X_test3d, y_train, y_test, batch_size=100, epochs=50)
+    
+    backtest(predictions, 10000, Close_list, targets, ticker, split_value, sell_tolerance=0.5, buy_tolerance=0.5)
 
 
 

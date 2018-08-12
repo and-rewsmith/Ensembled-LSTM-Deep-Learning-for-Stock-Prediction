@@ -17,12 +17,11 @@ from keras.callbacks import TensorBoard
 
 def flatten_dataset(df, test_size=.1):
     
-    
-    
-    
-    
     df = df[::-1]
+    
     samples = len(df)
+    
+    print(df)
     
     split_value = round(samples - samples*test_size)
     inputs = len(df.columns) - 1
@@ -55,9 +54,9 @@ def flatten_dataset(df, test_size=.1):
     X_test3d = X_test2d.reshape(len(y_test), inputs, 1)
     X_full3d = X_full2d.reshape(len(Y), inputs, 1)
     
-    return X_full2d, X_full3d, Y, X_train2d, X_test2d, X_train3d, X_test3d, y_train, y_test 
+    return X_full2d, X_full3d, Y, X_train2d, X_test2d, X_train3d, X_test3d, y_train, y_test, split_value 
     
-def lstm_train(X_full2d, X_full3d, Y, X_train2d, X_test2d, X_train3d, X_test3d, y_train, y_test, batch_size):
+def lstm_train(X_full2d, X_full3d, Y, X_train2d, X_test2d, X_train3d, X_test3d, y_train, y_test, batch_size=100, epochs=50):
  
     
     tbCallBack = TensorBoard(log_dir='./Graph', write_graph=True, histogram_freq=5)
@@ -110,17 +109,18 @@ def lstm_train(X_full2d, X_full3d, Y, X_train2d, X_test2d, X_train3d, X_test3d, 
     
     predictions = Dense(1, activation = 'sigmoid')(full_ensemble)
     
+    
     # This creates a model that includes
     # the Input layer and three Dense layers
     model = Model(inputs=[inputs2d,inputs3d], outputs=predictions)
     
-    model.compile(optimizer='RMSprop',
+    model.compile(optimizer='adam',
                   loss='binary_crossentropy',
                   metrics=['accuracy'])
     
     plot_model(model, to_file='plot.png', show_shapes = True)
     
-    history = model.fit([X_train2d, X_train3d], y_train, epochs  = 250, batch_size = batch_size, verbose = 1, validation_data = ([X_test2d, X_test3d], y_test), callbacks=[tbCallBack])  # starts training
+    history = model.fit([X_train2d, X_train3d], y_train, epochs  = epochs, batch_size = batch_size, verbose = 1, validation_data = ([X_test2d, X_test3d], y_test), callbacks=[tbCallBack])  # starts training
 
 
     predictions = model.predict([X_full2d, X_full3d])
@@ -144,7 +144,7 @@ def lstm_train(X_full2d, X_full3d, Y, X_train2d, X_test2d, X_train3d, X_test3d, 
     plt.hist(ones, alpha = 0.5, bins = 50, label = 'Green Day Predictions', color = 'green')
     plt.hist(zeros, alpha = 0.5, bins = 50, label = 'Red Day Predictions', color = 'red')
     plt.legend(loc='upper right')
-    plt.title('Distirbution of Predictions by Target')
+    plt.title('Distribution of Predictions by Target')
     plt.show()
  
 #    model = Sequential()
@@ -159,5 +159,5 @@ def lstm_train(X_full2d, X_full3d, Y, X_train2d, X_test2d, X_train3d, X_test3d, 
 #    
 #    predictions = model.predict(X_test)
 
-    return model, history
+    return model, history, predictions, targets
     
