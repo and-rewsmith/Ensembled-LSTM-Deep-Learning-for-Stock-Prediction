@@ -21,6 +21,12 @@ import webbrowser
 import time
 import os
 
+if os.path.isdir("./Graph") == True:
+    pass
+else:
+    os.makedirs("./Graph")
+
+
 folder = './Graph'
 for the_file in os.listdir(folder):
     file_path = os.path.join(folder, the_file)
